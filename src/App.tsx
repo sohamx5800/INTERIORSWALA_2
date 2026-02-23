@@ -13,11 +13,13 @@ import {
   Instagram, 
   Facebook, 
   Linkedin,
-  MessageCircle 
+  MessageCircle,
+  Globe
 } from 'lucide-react';
 import { BRAND_IMAGES, SERVICES, PORTFOLIO_ITEMS } from './constants';
 import { generateInteriorConcept } from './services/geminiService';
-import { ProjectConcept, QuotationRequest } from './types';
+import { ProjectConcept, QuotationRequest, SiteProfile, PortfolioItem } from './types';
+import AdminPanel from './components/AdminPanel';
 
 // --- Components ---
 
@@ -270,6 +272,10 @@ const ExpertiseSlider = () => {
 };
 
 export default function App() {
+  const [isAdminView, setIsAdminView] = useState(false);
+  const [profile, setProfile] = useState<SiteProfile | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+
   const [conceptPrompt, setConceptPrompt] = useState('');
   const [concept, setConcept] = useState<ProjectConcept | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -279,11 +285,42 @@ export default function App() {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [attachConcept, setAttachConcept] = useState(false);
+
+  useEffect(() => {
+    fetchSiteData();
+    
+    // Handle hash-based admin access
+    const handleHashChange = () => {
+      if (window.location.hash === '#admin') {
+        setIsAdminView(true);
+      }
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    handleHashChange(); // Check on initial load
+
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  const fetchSiteData = async () => {
+    try {
+      const [profRes, portRes] = await Promise.all([
+        fetch('/api/profile'),
+        fetch('/api/portfolio')
+      ]);
+      setProfile(await profRes.json());
+      setPortfolio(await portRes.json());
+    } catch (error) {
+      console.error('Error fetching site data:', error);
+    }
+  };
 
   const handleGenerateConcept = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!conceptPrompt.trim()) return;
     setIsGenerating(true);
+    setAttachConcept(false);
     try {
       const result = await generateInteriorConcept(conceptPrompt);
       setConcept(result);
@@ -294,17 +331,38 @@ export default function App() {
     }
   };
 
-  const handleQuoteSubmit = (e: React.FormEvent) => {
+  const handleQuoteSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    // Simulate API call
-    setTimeout(() => {
-      setIsSubmitting(false);
+    const payload = {
+      ...quoteForm,
+      aiConcept: attachConcept && concept ? JSON.stringify(concept) : undefined
+    };
+    try {
+      await fetch('/api/quotations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
       setSubmitSuccess(true);
       setQuoteForm({ name: '', email: '', phone: '', projectType: 'Residential', budget: '', message: '' });
+      setAttachConcept(false);
       setTimeout(() => setSubmitSuccess(false), 5000);
-    }, 1500);
+    } catch (error) {
+      console.error('Submission failed', error);
+      alert('Failed to submit request. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
+
+  if (isAdminView) {
+    return <AdminPanel onClose={() => {
+      setIsAdminView(false);
+      window.location.hash = ''; // Clear hash on close
+      fetchSiteData();
+    }} />;
+  }
 
   return (
     <div className="min-h-screen selection:bg-brand-accent selection:text-white">
@@ -519,7 +577,7 @@ export default function App() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-12">
-            {PORTFOLIO_ITEMS.map((item, idx) => (
+            {(portfolio.length > 0 ? portfolio : PORTFOLIO_ITEMS).map((item, idx) => (
               <motion.div
                 key={item.id}
                 initial={{ opacity: 0, y: 50 }}
@@ -708,17 +766,17 @@ export default function App() {
                     <div className="space-y-10 md:space-y-12">
                       <div className="bg-white/5 p-6 md:p-8 rounded-2xl border border-white/10 backdrop-blur-md">
                         <h5 className="text-[10px] md:text-xs uppercase tracking-[0.3em] mb-6 md:mb-8 text-white/40">Color Palette</h5>
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-3 gap-y-8 gap-x-4">
                           {concept.colorPalette.map((color, i) => (
-                            <div key={i} className="group relative">
+                            <div key={i} className="flex flex-col items-center gap-2 group">
                               <motion.div 
                                 initial={{ scale: 0 }}
                                 animate={{ scale: 1 }}
                                 transition={{ delay: 0.5 + i * 0.1 }}
-                                className="aspect-square rounded-xl border border-white/20 shadow-2xl cursor-pointer hover:scale-110 transition-transform" 
+                                className="w-full aspect-square rounded-xl border border-white/20 shadow-2xl cursor-pointer hover:scale-105 transition-transform" 
                                 style={{ backgroundColor: color.startsWith('#') ? color : `#${color}` }}
                               />
-                              <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap font-mono text-white/50">
+                              <span className="text-[9px] font-mono text-white/40 uppercase tracking-wider group-hover:text-brand-accent transition-colors">
                                 {color}
                               </span>
                             </div>
@@ -804,7 +862,7 @@ export default function App() {
                     </div>
                     <div>
                       <span className="text-[9px] md:text-[10px] uppercase tracking-[0.3em] text-white/40 block mb-1">Call Us</span>
-                      <p className="text-lg md:text-xl font-medium text-white tracking-wide">+91 79808 72754</p>
+                      <p className="text-lg md:text-xl font-medium text-white tracking-wide">{profile?.phone || '+91 79808 72754'}</p>
                     </div>
                   </motion.div>
                   
@@ -819,7 +877,7 @@ export default function App() {
                     </div>
                     <div>
                       <span className="text-[9px] md:text-[10px] uppercase tracking-[0.3em] text-white/40 block mb-1">Email</span>
-                      <p className="text-lg md:text-xl font-medium text-white tracking-wide break-all">contact.interiorswala@gmail.com</p>
+                      <p className="text-lg md:text-xl font-medium text-white tracking-wide break-all">{profile?.email || 'contact.interiorswala@gmail.com'}</p>
                     </div>
                   </motion.div>
                   
@@ -835,7 +893,7 @@ export default function App() {
                     <div>
                       <span className="text-[9px] md:text-[10px] uppercase tracking-[0.3em] text-white/40 block mb-1">Office</span>
                       <p className="text-base md:text-lg font-light text-white/80 leading-relaxed max-w-xs">
-                        Mangal Pandey Sarni, Ward 38, East Vivekananda Pally, Rabindra Sarani, Siliguri, West Bengal 734001
+                        {profile?.address || 'Mangal Pandey Sarni, Ward 38, East Vivekananda Pally, Rabindra Sarani, Siliguri, West Bengal 734001'}
                       </p>
                     </div>
                   </motion.div>
@@ -898,7 +956,45 @@ export default function App() {
                         className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 md:px-6 text-white focus:border-brand-accent outline-none transition-all focus:bg-white/10 text-sm md:text-base"
                       />
                     </div>
+                    <div className="space-y-2 md:space-y-3">
+                      <label className="text-[9px] md:text-[10px] uppercase tracking-[0.3em] text-white/40 ml-1">Phone Number</label>
+                      <input 
+                        required
+                        type="tel" 
+                        value={quoteForm.phone}
+                        onChange={(e) => setQuoteForm({...quoteForm, phone: e.target.value})}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl py-4 px-5 md:px-6 text-white focus:border-brand-accent outline-none transition-all focus:bg-white/10 text-sm md:text-base"
+                        placeholder="+91 00000 00000"
+                      />
+                    </div>
                   </div>
+
+                  {concept && (
+                    <motion.div 
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="bg-brand-accent/10 border border-brand-accent/20 p-5 rounded-2xl flex items-center justify-between"
+                    >
+                      <div className="flex items-center space-x-4">
+                        <div className="w-10 h-10 rounded-full bg-brand-accent/20 flex items-center justify-center text-brand-accent">
+                          <Sparkles size={20} />
+                        </div>
+                        <div>
+                          <p className="text-white text-sm font-medium">AI Concept Generated</p>
+                          <p className="text-white/40 text-[10px] uppercase tracking-widest">Attach this design to your request?</p>
+                        </div>
+                      </div>
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          className="sr-only peer"
+                          checked={attachConcept}
+                          onChange={(e) => setAttachConcept(e.target.checked)}
+                        />
+                        <div className="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-brand-accent"></div>
+                      </label>
+                    </motion.div>
+                  )}
 
                   <div className="space-y-2 md:space-y-3">
                     <label className="text-[9px] md:text-[10px] uppercase tracking-[0.3em] text-white/40 ml-1">Message</label>
@@ -965,9 +1061,28 @@ export default function App() {
             <div>
               <h5 className="text-[10px] uppercase tracking-[0.3em] text-brand-accent mb-8 font-semibold">Social</h5>
               <div className="flex space-x-6">
-                <a href="https://www.instagram.com/interiorswala.in?igsh=N3ludzc2bDlnZXht" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-brand-accent hover:text-white hover:border-brand-accent transition-all duration-500"><Instagram size={20} /></a>
-                <a href="https://www.facebook.com/profile.php?id=61552204746268" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-brand-accent hover:text-white hover:border-brand-accent transition-all duration-500"><Facebook size={20} /></a>
-                <a href="https://wa.me/917980872754" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-brand-accent hover:text-white hover:border-brand-accent transition-all duration-500"><MessageCircle size={20} /></a>
+                {(profile?.socialLinks || []).map((link, idx) => (
+                  <a 
+                    key={idx}
+                    href={link.url} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-brand-accent hover:text-white hover:border-brand-accent transition-all duration-500"
+                  >
+                    {link.platform.toLowerCase().includes('instagram') ? <Instagram size={20} /> : 
+                     link.platform.toLowerCase().includes('facebook') ? <Facebook size={20} /> : 
+                     link.platform.toLowerCase().includes('linkedin') ? <Linkedin size={20} /> : 
+                     link.platform.toLowerCase().includes('whatsapp') ? <MessageCircle size={20} /> : 
+                     <Globe size={20} />}
+                  </a>
+                ))}
+                {!profile?.socialLinks?.length && (
+                  <>
+                    <a href="https://www.instagram.com/interiorswala.in?igsh=N3ludzc2bDlnZXht" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-brand-accent hover:text-white hover:border-brand-accent transition-all duration-500"><Instagram size={20} /></a>
+                    <a href="https://www.facebook.com/profile.php?id=61552204746268" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-brand-accent hover:text-white hover:border-brand-accent transition-all duration-500"><Facebook size={20} /></a>
+                    <a href="https://wa.me/917980872754" target="_blank" rel="noopener noreferrer" className="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:bg-brand-accent hover:text-white hover:border-brand-accent transition-all duration-500"><MessageCircle size={20} /></a>
+                  </>
+                )}
               </div>
             </div>
           </div>
