@@ -40,6 +40,21 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
   useEffect(() => {
     fetchData();
+    
+    // Check for existing session
+    const savedSession = localStorage.getItem('admin_session');
+    if (savedSession) {
+      try {
+        const { expiry } = JSON.parse(savedSession);
+        if (new Date().getTime() < expiry) {
+          setIsLoggedIn(true);
+        } else {
+          localStorage.removeItem('admin_session');
+        }
+      } catch (e) {
+        localStorage.removeItem('admin_session');
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -164,6 +179,10 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
     if (loginForm.username === 'admin_456' && loginForm.password === 'Admin@5632') {
       setIsLoggedIn(true);
       setLoginError('');
+      
+      // Save session for 7 days
+      const expiry = new Date().getTime() + 7 * 24 * 60 * 60 * 1000;
+      localStorage.setItem('admin_session', JSON.stringify({ expiry }));
     } else {
       setLoginError('Invalid credentials. Please try again.');
     }
@@ -301,6 +320,7 @@ const AdminPanel: React.FC<AdminPanelProps> = ({ onClose }) => {
 
         <button 
           onClick={() => {
+            localStorage.removeItem('admin_session');
             setIsLoggedIn(false);
             onClose();
           }}
